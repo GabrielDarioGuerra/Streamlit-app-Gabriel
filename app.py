@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from sqlalchemy import create_engine
+import sqlite3
 
 # Title of the Streamlit app
 st.title("Product Finder App")
@@ -19,22 +19,26 @@ with col2:
     st.write("HIT_SP-MVX-1407-16-100-35")
 
 # Path to the SQLite database
-db_path = "sqlite:///masterfile.db"
+db_path = "masterfile.db"
 
-# Create a connection to the SQLite database
-engine = create_engine(db_path)
+# Function to load data from the SQLite database
+def load_data(query):
+    conn = sqlite3.connect(db_path)
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
 
 # Load the data from the database tables
-df_Schoeck = pd.read_sql_table("updated_Isokorb_T_full_columns", engine)
-df_XT = pd.read_sql_table("updated_Isokorb_XT_full_columns", engine)
+df_Schoeck = load_data("SELECT * FROM updated_Isokorb_T_full_columns")
+df_XT = load_data("SELECT * FROM updated_Isokorb_XT_full_columns")
 df_Schoeck = pd.concat([df_Schoeck, df_XT], ignore_index=True)
 
-df_Leviat_HP = pd.read_sql_table("final_file_extended_columns_HIT_HP", engine)
-df_Leviat_SP = pd.read_sql_table("final_file_extended_columns_HIT_SP", engine)
+df_Leviat_HP = load_data("SELECT * FROM final_file_extended_columns_HIT_HP")
+df_Leviat_SP = load_data("SELECT * FROM final_file_extended_columns_HIT_SP")
 df_Leviat = pd.concat([df_Leviat_HP, df_Leviat_SP], ignore_index=True)
 
-# Product mapping table
-product_mapping = pd.read_sql_table("product_mapping", engine)
+# Load the product mapping table
+product_mapping = load_data("SELECT * FROM product_mapping")
 
 # Corrected preprocessing function for additional file
 def preprocess_additional_file(df_Leviat):
