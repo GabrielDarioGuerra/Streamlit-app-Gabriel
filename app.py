@@ -18,10 +18,10 @@ with col2:
     st.write("### Halfen/Leviat Example:")
     st.write("HIT_SP-MVX-1407-16-100-35")
 
-# Paths to the SQLite database
+# Path to the SQLite database
 db_path = r"masterfile.db"
 
-# Load data from the SQLite database
+# Function to load data from the SQLite database
 def load_data_from_db(table_name):
     conn = sqlite3.connect(db_path)
     query = f"SELECT * FROM {table_name}"
@@ -46,14 +46,12 @@ df_Leviat = pd.concat([df_Leviat_HP, df_Leviat_SP], ignore_index=True)
 # Corrected preprocessing function for additional file
 def preprocess_additional_file(df_Leviat):
     filtered_df = df_Leviat[df_Leviat['c'] == "25/30"].copy()
-    filtered_df['mrd'] = filtered_df['mrd'].astype(str).str.replace(',', '.').str.replace('-', '')
-    filtered_df['vrd'] = filtered_df['vrd'].astype(str).str.replace(',', '.').str.replace('-', '')
-    filtered_df['mrd'] = filtered_df['mrd'].astype(float)
-    filtered_df['vrd'] = filtered_df['vrd'].astype(float)
-    filtered_df = filtered_df[['mrd', 'vrd', 'mrd_type', 'vrd_type', 'new_product_type', 'hh']]
-    result_df = filtered_df.groupby('new_product_type').agg(
-        MRD_Range=pd.NamedAgg(column='mrd', aggfunc=lambda x: f"{x.min()}-{x.max()}"),
-        VRD_Range=pd.NamedAgg(column='vrd', aggfunc=lambda x: f"{x.min()}-{x.max()}"),
+    filtered_df['mRd'] = filtered_df['mRd_minus'].astype(str).str.replace(',', '.').str.replace('-', '0').astype(float)
+    filtered_df['vRd'] = filtered_df['vRd_plus'].astype(str).str.replace(',', '.').str.replace('-', '0').astype(float)
+    filtered_df = filtered_df[['mRd', 'vRd', 'mrd_type', 'vrd_type', 'product_name', 'hh']]
+    result_df = filtered_df.groupby('product_name').agg(
+        MRD_Range=pd.NamedAgg(column='mRd', aggfunc=lambda x: f"{x.min()}-{x.max()}"),
+        VRD_Range=pd.NamedAgg(column='vRd', aggfunc=lambda x: f"{x.min()}-{x.max()}"),
         Height=pd.NamedAgg(column='hh', aggfunc='first')
     ).reset_index()
     return result_df
@@ -81,7 +79,7 @@ def fetch_specs_by_model_schoeck(df_Schoeck, product_name):
 # Function to fetch specifications by model number from Leviat
 def fetch_specs_by_model_leviat(df_Leviat, encoded_value):
     preprocessed_df = preprocess_additional_file(df_Leviat)
-    specific_product = preprocessed_df[preprocessed_df['new_product_type'] == encoded_value]
+    specific_product = preprocessed_df[preprocessed_df['product_name'] == encoded_value]
     if specific_product.empty:
         return None, None, None
     mrd_value = specific_product['MRD_Range'].values[0].split('-')
@@ -106,7 +104,7 @@ def fetch_alternative_products_by_specs(df_Schoeck, df_Leviat, mrd_value, vrd_va
         (preprocessed_df_leviat['MRD_min'] <= mrd_max) & (preprocessed_df_leviat['MRD_max'] >= mrd_min) &
         (preprocessed_df_leviat['VRD_min'] <= vrd_max) & (preprocessed_df_leviat['VRD_max'] >= vrd_min) &
         (preprocessed_df_leviat['Height'].between(height_min, height_max))
-    ][['new_product_type', 'MRD_Range', 'VRD_Range', 'Height']]  # Selecting specific columns
+    ][['product_name', 'MRD_Range', 'VRD_Range', 'Height']]  # Selecting specific columns
 
     return df_Schoeck_filtered, df_Leviat_filtered
 
@@ -172,7 +170,7 @@ if input_type == "Model Number":
                 alternative_products_leviat = format_dataframe(alternative_products_leviat)
 
                 def highlight_product_leviat(row):
-                    if row['new_product_type'] == product_name:
+                    if row['product_name'] == product_name:
                         return ['background-color: yellow'] * len(row)
                     else:
                         return [''] * len(row)
@@ -182,7 +180,7 @@ if input_type == "Model Number":
         
         if mrd_value_leviat is not None and vrd_value_leviat is not None and height_value_leviat is not None:
             # Search for alternatives in both databases using Leviat specs
-            specific_product_leviat = preprocess_additional_file(df_Leviat)[preprocess_additional_file(df_Leviat)['new_product_type'] == product_name]
+            specific_product_leviat = preprocess_additional_file(df_Leviat)[preprocess_additional_file(df_Leviat)['product_name'] == product_name]
             alternative_products_schoeck, alternative_products_leviat = fetch_alternative_products_by_specs(
                 df_Schoeck, df_Leviat, mrd_value_leviat, vrd_value_leviat, height_value_leviat,
                 mrd_value_leviat * mrd_lower_bound, mrd_value_leviat * mrd_upper_bound,
@@ -207,7 +205,7 @@ if input_type == "Model Number":
                 alternative_products_leviat = format_dataframe(alternative_products_leviat)
 
                 def highlight_product_leviat(row):
-                    if row['new_product_type'] == product_name:
+                    if row['product_name'] == product_name:
                         return ['background-color: yellow'] * len(row)
                     else:
                         return [''] * len(row)
