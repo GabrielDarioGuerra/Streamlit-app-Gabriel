@@ -1,4 +1,5 @@
 import pandas as pd
+import sqlite3
 import streamlit as st
 
 # Title of the Streamlit app
@@ -17,25 +18,30 @@ with col2:
     st.write("### Halfen/Leviat Example:")
     st.write("HIT_SP-MVX-1407-16-100-35")
 
-# Paths to the CSV files
-csv_path_1 = r"Isokorb_T_Updated.csv"
-csv_path_2 = r"Isokorb_XT_Updated.csv"
-csv_path_Leviat_1 = r"HIT-HP_Updated.csv"
-csv_path_Leviat_2 = r"HIT-SP_Updated.csv"
+# Paths to the SQLite database
+db_path = r"masterfile.db"
 
-# Load the CSV files
-df1 = pd.read_csv(csv_path_1)
-df2 = pd.read_csv(csv_path_2)
-df_Leviat_1 = pd.read_csv(csv_path_Leviat_1)
-df_Leviat_2 = pd.read_csv(csv_path_Leviat_2)
+# Load data from the SQLite database
+def load_data_from_db(table_name):
+    conn = sqlite3.connect(db_path)
+    query = f"SELECT * FROM {table_name}"
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
+
+# Load the tables into DataFrames
+df_Schoeck_T = load_data_from_db("updated_Isokorb_T_full_columns")
+df_Schoeck_XT = load_data_from_db("updated_Isokorb_XT_full_columns")
+df_Leviat_HP = load_data_from_db("final_file_extended_columns_HIT_HP")
+df_Leviat_SP = load_data_from_db("final_file_extended_columns_HIT_SP")
 
 # Exclude the first row from the second DataFrame and combine them
-df2 = df2.iloc[1:].reset_index(drop=True)
-df_Schoeck = pd.concat([df1, df2], ignore_index=True)
+df_Schoeck_XT = df_Schoeck_XT.iloc[1:].reset_index(drop=True)
+df_Schoeck = pd.concat([df_Schoeck_T, df_Schoeck_XT], ignore_index=True)
 
 # Create Proper DataFrame for Leviat Products
-df_Leviat_2 = df_Leviat_2.iloc[1:].reset_index(drop=True)
-df_Leviat = pd.concat([df_Leviat_1, df_Leviat_2], ignore_index=True)
+df_Leviat_SP = df_Leviat_SP.iloc[1:].reset_index(drop=True)
+df_Leviat = pd.concat([df_Leviat_HP, df_Leviat_SP], ignore_index=True)
 
 # Corrected preprocessing function for additional file
 def preprocess_additional_file(df_Leviat):
