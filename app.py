@@ -67,7 +67,7 @@ def fetch_specs_by_model(df, product_name):
     specific_product = df[df['product_name'] == product_name]
     if specific_product.empty:
         st.write(f"No such product found in the Database for {product_name}.")
-        return None, None, None
+        return None, None, None, None
     mrd_value = specific_product['mRd'].values[0]
     vrd_value = specific_product['vRd'].values[0]
     height_value = specific_product['Height'].values[0] if 'Height' in specific_product.columns else specific_product['hh'].values[0]
