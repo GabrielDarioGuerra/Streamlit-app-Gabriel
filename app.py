@@ -35,78 +35,73 @@ df_Schoeck_XT = load_data_from_db("updated_Isokorb_XT_full_columns")
 df_Leviat_HP = load_data_from_db("final_file_extended_columns_HIT_HP")
 df_Leviat_SP = load_data_from_db("final_file_extended_columns_HIT_SP")
 
-# Exclude the first row from the second DataFrame and combine them
-df_Schoeck_XT = df_Schoeck_XT.iloc[1:].reset_index(drop=True)
-df_Schoeck = pd.concat([df_Schoeck_T, df_Schoeck_XT], ignore_index=True)
+# Load the product mapping table
+product_mapping = load_data_from_db("product_mapping")
 
-# Create Proper DataFrame for Leviat Products
-df_Leviat_SP = df_Leviat_SP.iloc[1:].reset_index(drop=True)
+# Function to preprocess Leviat data
+def preprocess_leviat_data(df):
+    df['mRd'] = df['mRd_minus'].astype(str).str.replace(',', '.').str.replace('-', '0').astype(float)
+    df['vRd'] = df['vRd_plus'].astype(str).str.replace(',', '.').str.replace('-', '0').astype(float)
+    df = df[['mRd', 'vRd', 'mrd_type', 'vrd_type', 'product_name', 'hh', 'Thickness']]
+    return df
+
+# Preprocess Leviat data
+df_Leviat_HP = preprocess_leviat_data(df_Leviat_HP)
+df_Leviat_SP = preprocess_leviat_data(df_Leviat_SP)
 df_Leviat = pd.concat([df_Leviat_HP, df_Leviat_SP], ignore_index=True)
 
-# Corrected preprocessing function for additional file
-def preprocess_additional_file(df_Leviat):
-    filtered_df = df_Leviat[df_Leviat['c'] == "25/30"].copy()
-    filtered_df['mRd'] = filtered_df['mRd_minus'].astype(str).str.replace(',', '.').str.replace('-', '0').astype(float)
-    filtered_df['vRd'] = filtered_df['vRd_plus'].astype(str).str.replace(',', '.').str.replace('-', '0').astype(float)
-    filtered_df = filtered_df[['mRd', 'vRd', 'mrd_type', 'vrd_type', 'product_name', 'hh']]
-    result_df = filtered_df.groupby('product_name').agg(
-        MRD_Range=pd.NamedAgg(column='mRd', aggfunc=lambda x: f"{x.min()}-{x.max()}"),
-        VRD_Range=pd.NamedAgg(column='vRd', aggfunc=lambda x: f"{x.min()}-{x.max()}"),
-        Height=pd.NamedAgg(column='hh', aggfunc='first')
-    ).reset_index()
-    return result_df
+# Function to preprocess Schoeck data
+def preprocess_schoeck_data(df):
+    df['mRd'] = df['mRd'].astype(str).str.replace(',', '.').str.replace('±', '').str.replace('-', '0').astype(float)
+    df['vRd'] = df['vRd'].astype(str).str.replace(',', '.').str.replace('±', '').str.replace('-', '0').astype(float)
+    df = df[['mRd', 'vRd', 'product_name', 'Height', 'Thickness']]
+    return df
 
-# Preprocessing function for Schoeck data
-def preprocess_schoeck_file(df_Schoeck):
-    df_Schoeck['mRd'] = df_Schoeck['mRd'].astype(str).str.replace(',', '.').str.replace('±', '').str.replace('-', '0').astype(float)
-    df_Schoeck['vRd'] = df_Schoeck['vRd'].astype(str).str.replace(',', '.').str.replace('±', '').str.replace('-', '0').astype(float)
-    return df_Schoeck
+# Preprocess Schoeck data
+df_Schoeck_T = preprocess_schoeck_data(df_Schoeck_T)
+df_Schoeck_XT = preprocess_schoeck_data(df_Schoeck_XT)
+df_Schoeck = pd.concat([df_Schoeck_T, df_Schoeck_XT], ignore_index=True)
 
-# Apply preprocessing to the Schoeck dataframe
-df_Schoeck = preprocess_schoeck_file(df_Schoeck)
-
-# Function to fetch specifications by model number from Schoeck
-def fetch_specs_by_model_schoeck(df_Schoeck, product_name):
-    specific_product = df_Schoeck[df_Schoeck['product_name'] == product_name]
+# Function to fetch specifications by model number
+def fetch_specs_by_model(df, product_name):
+    specific_product = df[df['product_name'] == product_name]
     if specific_product.empty:
-        st.write("No such product found in the Schoeck's Database.")
+        st.write(f"No such product found in the Database for {product_name}.")
         return None, None, None
     mrd_value = specific_product['mRd'].values[0]
     vrd_value = specific_product['vRd'].values[0]
-    height_value = int(product_name.split('-')[7][1:])  # Extract height from model number
-    return mrd_value, vrd_value, height_value
+    height_value = specific_product['Height'].values[0] if 'Height' in specific_product.columns else specific_product['hh'].values[0]
+    thickness_value = specific_product['Thickness'].values[0]
+    return mrd_value, vrd_value, height_value, thickness_value
 
-# Function to fetch specifications by model number from Leviat
-def fetch_specs_by_model_leviat(df_Leviat, encoded_value):
-    preprocessed_df = preprocess_additional_file(df_Leviat)
-    specific_product = preprocessed_df[preprocessed_df['product_name'] == encoded_value]
-    if specific_product.empty:
-        return None, None, None
-    mrd_value = specific_product['MRD_Range'].values[0].split('-')
-    vrd_value = specific_product['VRD_Range'].values[0].split('-')
-    height_value = specific_product['Height'].values[0]
-    return float(mrd_value[0]), float(vrd_value[0]), height_value
+# Function to fetch alternative products based on the specifications and thickness mapping
+def fetch_alternative_products(df_schoeck, df_leviat, mrd_value, vrd_value, height_value, thickness_value, mrd_min, mrd_max, vrd_min, vrd_max, height_min, height_max):
+    # Map the thickness to the product type
+    if thickness_value in product_mapping['Schöck'].values:
+        mapped_thickness = product_mapping[product_mapping['Schöck'] == thickness_value]['Leviat'].values[0]
+        df_schoeck_filtered = df_schoeck[(df_schoeck['Thickness'] == thickness_value)]
+        df_leviat_filtered = df_leviat[(df_leviat['Thickness'] == mapped_thickness)]
+    elif thickness_value in product_mapping['Leviat'].values:
+        mapped_thickness = product_mapping[product_mapping['Leviat'] == thickness_value]['Schöck'].values[0]
+        df_schoeck_filtered = df_schoeck[(df_schoeck['Thickness'] == mapped_thickness)]
+        df_leviat_filtered = df_leviat[(df_leviat['Thickness'] == thickness_value)]
+    else:
+        st.write("No mapping found for the product's thickness.")
+        return pd.DataFrame(), pd.DataFrame()
+    
+    df_schoeck_filtered = df_schoeck_filtered[
+        (df_schoeck_filtered['mRd'] >= mrd_min) & (df_schoeck_filtered['mRd'] <= mrd_max) &
+        (df_schoeck_filtered['vRd'] >= vrd_min) & (df_schoeck_filtered['vRd'] <= vrd_max) &
+        (df_schoeck_filtered['Height'].between(height_min, height_max))
+    ]
 
-# Function to fetch alternative products by specifications from combined CSVs (Schoeck and Leviat)
-def fetch_alternative_products_by_specs(df_Schoeck, df_Leviat, mrd_value, vrd_value, height_value, mrd_min, mrd_max, vrd_min, vrd_max, height_min, height_max):
-    # Ensure 'Height' column is numeric
-    df_Schoeck['Height'] = pd.to_numeric(df_Schoeck['product_name'].str.extract(r'H(\d+)')[0], errors='coerce')
-    df_Schoeck_filtered = df_Schoeck[
-        (df_Schoeck['mRd'] >= mrd_min) & (df_Schoeck['mRd'] <= mrd_max) &
-        (df_Schoeck['vRd'] >= vrd_min) & (df_Schoeck['vRd'] <= vrd_max) &
-        (df_Schoeck['Height'].between(height_min, height_max))
-    ][['product_name', 'mRd', 'vRd', 'Height']]  # Rearrange columns
+    df_leviat_filtered = df_leviat_filtered[
+        (df_leviat_filtered['mRd'] >= mrd_min) & (df_leviat_filtered['mRd'] <= mrd_max) &
+        (df_leviat_filtered['vRd'] >= vrd_min) & (df_leviat_filtered['vRd'] <= vrd_max) &
+        (df_leviat_filtered['hh'].between(height_min, height_max))
+    ]
 
-    preprocessed_df_leviat = preprocess_additional_file(df_Leviat)
-    preprocessed_df_leviat[['MRD_min', 'MRD_max']] = preprocessed_df_leviat['MRD_Range'].str.split('-', expand=True).astype(float)
-    preprocessed_df_leviat[['VRD_min', 'VRD_max']] = preprocessed_df_leviat['VRD_Range'].str.split('-', expand=True).astype(float)
-    df_Leviat_filtered = preprocessed_df_leviat[
-        (preprocessed_df_leviat['MRD_min'] <= mrd_max) & (preprocessed_df_leviat['MRD_max'] >= mrd_min) &
-        (preprocessed_df_leviat['VRD_min'] <= vrd_max) & (preprocessed_df_leviat['VRD_max'] >= vrd_min) &
-        (preprocessed_df_leviat['Height'].between(height_min, height_max))
-    ][['product_name', 'MRD_Range', 'VRD_Range', 'Height']]  # Selecting specific columns
-
-    return df_Schoeck_filtered, df_Leviat_filtered
+    return df_schoeck_filtered, df_leviat_filtered
 
 # Function to format DataFrame columns
 def format_dataframe(df):
@@ -139,21 +134,20 @@ if input_type == "Model Number":
     
     if product_name:
         # Fetch specs from Schoeck and Leviat
-        mrd_value_schoeck, vrd_value_schoeck, height_value_schoeck = fetch_specs_by_model_schoeck(df_Schoeck, product_name)
-        mrd_value_leviat, vrd_value_leviat, height_value_leviat = fetch_specs_by_model_leviat(df_Leviat, product_name)
+        mrd_value_schoeck, vrd_value_schoeck, height_value_schoeck, thickness_value_schoeck = fetch_specs_by_model(df_Schoeck, product_name)
+        mrd_value_leviat, vrd_value_leviat, height_value_leviat, thickness_value_leviat = fetch_specs_by_model(df_Leviat, product_name)
         
         if mrd_value_schoeck is not None and vrd_value_schoeck is not None and height_value_schoeck is not None:
             # Search for alternatives in both databases using Schoeck specs
-            specific_product_schoeck = df_Schoeck[df_Schoeck['product_name'] == product_name]
-            alternative_products_schoeck, alternative_products_leviat = fetch_alternative_products_by_specs(
-                df_Schoeck, df_Leviat, mrd_value_schoeck, vrd_value_schoeck, height_value_schoeck,
+            alternative_products_schoeck, alternative_products_leviat = fetch_alternative_products(
+                df_Schoeck, df_Leviat, mrd_value_schoeck, vrd_value_schoeck, height_value_schoeck, thickness_value_schoeck,
                 mrd_value_schoeck * mrd_lower_bound, mrd_value_schoeck * mrd_upper_bound,
                 vrd_value_schoeck * vrd_lower_bound, vrd_value_schoeck * vrd_upper_bound,
                 height_value_schoeck - height_offset, height_value_schoeck + height_offset)
             
             if not alternative_products_schoeck.empty:
                 alternative_products_schoeck = format_dataframe(alternative_products_schoeck)
-                specific_product_schoeck = format_dataframe(specific_product_schoeck[['product_name', 'mRd', 'vRd', 'Height']])
+                specific_product_schoeck = df_Schoeck[df_Schoeck['product_name'] == product_name]
 
                 def highlight_product_schoeck(row):
                     if row['product_name'] == product_name:
@@ -180,15 +174,14 @@ if input_type == "Model Number":
         
         if mrd_value_leviat is not None and vrd_value_leviat is not None and height_value_leviat is not None:
             # Search for alternatives in both databases using Leviat specs
-            specific_product_leviat = preprocess_additional_file(df_Leviat)[preprocess_additional_file(df_Leviat)['product_name'] == product_name]
-            alternative_products_schoeck, alternative_products_leviat = fetch_alternative_products_by_specs(
-                df_Schoeck, df_Leviat, mrd_value_leviat, vrd_value_leviat, height_value_leviat,
+            alternative_products_schoeck, alternative_products_leviat = fetch_alternative_products(
+                df_Schoeck, df_Leviat, mrd_value_leviat, vrd_value_leviat, height_value_leviat, thickness_value_leviat,
                 mrd_value_leviat * mrd_lower_bound, mrd_value_leviat * mrd_upper_bound,
                 vrd_value_leviat * vrd_lower_bound, vrd_value_leviat * vrd_upper_bound,
                 height_value_leviat - height_offset, height_value_leviat + height_offset)
             
             if not alternative_products_schoeck.empty:
-                alternative_products_schoeck = format_dataframe(alternative_products_schoeck[['product_name', 'mRd', 'vRd', 'Height']])
+                alternative_products_schoeck = format_dataframe(alternative_products_schoeck)
 
                 def highlight_product_schoeck(row):
                     if row['product_name'] == product_name:
@@ -220,8 +213,8 @@ else:
     height_value = st.number_input("Input Height value (in intervals of 10):", step=10, format="%d")
     
     if mrd_value != 0.00 and vrd_value != 0.00:
-        alternative_products_schoeck, additional_products_leviat = fetch_alternative_products_by_specs(
-            df_Schoeck, df_Leviat, mrd_value, vrd_value, height_value,
+        alternative_products_schoeck, additional_products_leviat = fetch_alternative_products(
+            df_Schoeck, df_Leviat, mrd_value, vrd_value, height_value, None,
             mrd_value * mrd_lower_bound, mrd_value * mrd_upper_bound,
             vrd_value * vrd_lower_bound, vrd_value * vrd_upper_bound,
             height_value - height_offset, height_value + height_offset)
